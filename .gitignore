@@ -12,3 +12,5 @@ __pycache__/
 # Ignorar arquivos de sistema
 .DS_Store
 Thumbs.db
+
+data/NOVA/resources/*/classification_data/classification_TFIDF_*_.csv
