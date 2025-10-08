@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-TIME_INTERVAL_ = "300s"
+TIME_INTERVAL_ = "180s"
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 RESOURCES_DIR = BASE_DIR / "data" / "NOVA" / "resources" / TIME_INTERVAL_

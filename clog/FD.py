@@ -4,14 +4,37 @@ import numpy as np
 from pomegranate import *
 import seaborn as sns
 import matplotlib.pyplot as plt
+from pathlib import Path
+import math
 
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from sklearn.metrics import confusion_matrix
 from sklearn.tree import DecisionTreeClassifier
 
-TIME_INTERVAL = "60s"
-N_STATES = 16
-# n_clusters = 10  # one in [10, 20, 50, 100]
+TIME_INTERVAL = "180s"
+N_STATES = 2
+n_clusters = 10  # one in [10, 20, 50, 100]
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+RESOURCES_ROOT = BASE_DIR / "data" / "NOVA" / "resources"
+RESULTS_ROOT = BASE_DIR / "results"
+CLUSTERING_RESULTS_DIR = RESULTS_ROOT / "clustering_results"
+CLUSTERING_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+FAULT_DATA_PATH = BASE_DIR / "data" / "RCA_logs" / "Fault-Injection-Dataset-master" / "nova.tsv"
+TARGET_INTERVALS = [TIME_INTERVAL]
+CLUSTER_OPTIONS = [30]
+
+
+def normalize_final_status(val: object) -> str:
+    tokens = [tok.strip().upper() for tok in str(val).replace('[', '').replace(']', '').split(',') if tok.strip()]
+    return "FAILURE" if any(tok == "FAILURE" for tok in tokens) else "NO_FAILURE"
+
+
+def safe_log_probability(model, sequence):
+    try:
+        return model.log_probability(sequence)
+    except ValueError:
+        return float("-inf")
 
 ## The main claim in the paper is that: there are problems that are not logged. In order to find them we need to consider alternative approach, e.g. measuring frequenceies, counts or coocurances.
 ## Therefore, it is important to
@@ -30,37 +53,45 @@ dd = defaultdict()
 
 
 flag = True
-for TIME_INTERVAL in ["180s", "240s", "300s"]:
+for TIME_INTERVAL in TARGET_INTERVALS:
 # for TIME_INTERVAL in ["120s"]:
-    for n_clusters in [30]:
+    hmm_sequences_dir = RESOURCES_ROOT / TIME_INTERVAL / "HMM_sequencies"
+    for n_clusters in CLUSTER_OPTIONS:
     # for n_clusters in [30]:
-        if flag == True:
+        if flag:
             try:
-                po = pd.read_csv(
-                    "../results/clustering_results/different_clustering_results_AD_"+ str(N_STATES) + "_states.csv")
+                clustering_scores_path = CLUSTERING_RESULTS_DIR / f"different_clustering_results_AD_{N_STATES}_states.csv"
+                po = pd.read_csv(clustering_scores_path)
                 po.columns = ["exp_name", "scores"]
                 po.index = po.exp_name
                 po = po.drop(["exp_name"], axis=1)
                 dd = po.to_dict()["scores"]
-            except:
+            except FileNotFoundError:
                 dd = defaultdict()
         print(dd)
         flag = False
         for run_id in range(0, 2):
             print("------"*20)
             print("Processsing time interval: {}, with n_clusters {} and round {}".format(TIME_INTERVAL, n_clusters, run_id))
-            pom_data = pd.read_csv("../data/RCA_logs/Fault-Injection-Dataset-master/nova.tsv", sep="\t")
+            pom_data = pd.read_csv(FAULT_DATA_PATH, sep="\t")
 
-            data = pd.read_csv("...../data/NOVA/resources/"+TIME_INTERVAL+"/HMM_sequencies/sequential_data"+TIME_INTERVAL+ "_clusters_"+str(n_clusters)+"_.csv")
+            sequence_path = hmm_sequences_dir / f"sequential_data{TIME_INTERVAL}_clusters_{n_clusters}_.csv"
+            data = pd.read_csv(sequence_path)
             data.sequence = data.sequence.apply(lambda x: [int(j) for j in x[1:-1].replace("\n", "").split()])
-            data["FAULT_TYPE"] = np.hstack([pom_data.FAULT_TYPE[:-1], pom_data.FAULT_TYPE[:-1]])
+            data["final_status_label"] = data["final_status"].apply(normalize_final_status)
+            fault_labels = pom_data["FAULT_TYPE"].dropna().to_numpy()
+            if fault_labels.size == 0:
+                raise ValueError("FAULT_TYPE column in nova.tsv is empty")
+            repeats = math.ceil(len(data) / fault_labels.size)
+            fault_sequence = np.tile(fault_labels, repeats)[: len(data)]
+            data["FAULT_TYPE"] = fault_sequence
             # data.FAULT_TYPE = data.FAULT_TYPE.fillna("good")
 
-            data_normal = data[data.final_status=="NO_FAILURE"]
+            data_normal = data[data.final_status_label == "NO_FAILURE"]
 
             data_normal_train = data_normal.sample(int(data_normal.shape[0]*0.8))
             data_normal_test = data_normal.loc[list(set(data_normal.index).difference(set(data_normal_train.index)))]
-            data_abnormal = data[data.final_status=="FAILURE"]
+            data_abnormal = data[data.final_status_label == "FAILURE"]
 
             hmm_model = HiddenMarkovModel.from_samples(DiscreteDistribution, n_components=N_STATES, X=[x for x in data_normal_train.sequence.values])
 
@@ -78,7 +109,7 @@ for TIME_INTERVAL in ["180s", "240s", "300s"]:
 
 
             for test_seq in data_abnormal.sequence.values:
-                predictions_abnormal_log_proba.append(hmm_model.log_probability(test_seq))
+                predictions_abnormal_log_proba.append(safe_log_probability(hmm_model, test_seq))
 
                 try:
                     trans, ems = hmm_model.forward_backward(test_seq)
@@ -89,7 +120,7 @@ for TIME_INTERVAL in ["180s", "240s", "300s"]:
                     predictions_abnormal_emis.append(np.nan)
 
             for test_seq in data_normal_test.sequence.values:
-                predictions_normal_test_log_proba.append(hmm_model.log_probability(test_seq))
+                predictions_normal_test_log_proba.append(safe_log_probability(hmm_model, test_seq))
                 try:
                     trans, ems = hmm_model.forward_backward(test_seq)
                     predictions_normal_test_trans.append(trans)
@@ -99,7 +130,7 @@ for TIME_INTERVAL in ["180s", "240s", "300s"]:
                     predictions_normal_test_emis.append(np.nan)
 
             for test_seq in data_normal_train.sequence.values:
-                predictions_normal_train_log_proba.append(hmm_model.log_probability(test_seq))
+                predictions_normal_train_log_proba.append(safe_log_probability(hmm_model, test_seq))
                 try:
                     trans, ems = hmm_model.forward_backward(test_seq)
                     predictions_normal_train_trans.append(trans)
@@ -159,7 +190,8 @@ for TIME_INTERVAL in ["180s", "240s", "300s"]:
             dd[TIME_INTERVAL + "_" + str(n_clusters) + "_" + str(run_id) + "_acc_score_"] = accuracy_score(real_tgt, preds)
 
 
-            pd.DataFrame(dd, index=["scores"]).T.to_csv("../results/clustering_results/different_clustering_results_AD_"+ str(N_STATES) + "_states.csv")
+            clustering_scores_path = CLUSTERING_RESULTS_DIR / f"different_clustering_results_AD_{N_STATES}_states.csv"
+            pd.DataFrame(dd, index=["scores"]).T.to_csv(clustering_scores_path)
 
 
         # def path_to_alignment(x, y, path):

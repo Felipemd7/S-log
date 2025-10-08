@@ -244,36 +244,10 @@ for TIME_INTERVAL_ in AVAILABLE_INTERVALS:
         return train_data_main, prediction_keys
 
     def cluster_sequences(train_data_main, prediction_keys):
+   
+   
+        return train_data_main.copy()
 
-        train_data_main_tmp = copy.copy(train_data_main)
-
-        col = train_data_main_tmp.columns[2]
-
-        sequences = train_data_main_tmp.groupby([col]).groups
-
-        dic = {}
-
-        for pred in prediction_keys:
-
-            d = {}
-
-            for key in sequences.keys():
-
-                d[key] = train_data_main.loc[sequences[key], pred].value_counts().index[0]
-
-            dic[pred] = d
-
-        d = pd.DataFrame(dic)
-
-        d.columns = prediction_keys
-
-        train_data_main_tmp = train_data_main_tmp.loc[train_data_main_tmp.drop_duplicates([col]).index]
-
-        train_data_main_tmp.index = train_data_main_tmp.loc[:, col]
-
-        train_data_main_tmp.loc[:, prediction_keys] = d
-
-        return train_data_main_tmp
 
     interval_dir = RESOURCES_ROOT / TIME_INTERVAL_
 
@@ -360,7 +334,7 @@ for TIME_INTERVAL_ in AVAILABLE_INTERVALS:
 
     # test_abnormal_data_main = pd.read_csv(path+"train_normal_"+TIME_INTERVAL_+".csv")
 
-    for n_clusters in [30]:
+    for n_clusters in [10]:
 
         print("*****************"*10)
 
@@ -384,7 +358,7 @@ for TIME_INTERVAL_ in AVAILABLE_INTERVALS:
 
             warmup_epochs = 200
 
-            clustering_epochs = 5
+            clustering_epochs = 20
 
         train_load = train_data_main.encoded_labels.apply(lambda x: np.array(x[1:-1].rsplit(",")).astype("int32")).values
 
@@ -422,7 +396,7 @@ for TIME_INTERVAL_ in AVAILABLE_INTERVALS:
 
         number_layers = 2
 
-        input_log_events = output_size = 471  # CHANGE THIS TO THE NUMBER OF TOKENS YOU HAVE IN THE INPUT
+        input_log_events = output_size = 518  # CHANGE THIS TO THE NUMBER OF TOKENS YOU HAVE IN THE INPUT
 
         d_model = 128  #
 
@@ -430,7 +404,7 @@ for TIME_INTERVAL_ in AVAILABLE_INTERVALS:
 
         dropout = 0.01
 
-        max_len_of_input = PAD_LEN
+        max_len_of_input = 64
 
         l2_regularization = 0.00001
 

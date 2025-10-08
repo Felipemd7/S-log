@@ -10,7 +10,7 @@ from sklearn.metrics import f1_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import confusion_matrix
 
-TIME_INTERVAL = "60s"
+TIME_INTERVAL = "180s"
 
 data = pd.read_csv("...../data/NOVA/resources/"+TIME_INTERVAL+"/classification_data/classification_TFIDF_"+ TIME_INTERVAL +"_.csv")
 data.target = data.target.fillna("NO_FAILURE")

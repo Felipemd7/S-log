@@ -1,13 +1,24 @@
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
 from sklearn.metrics import normalized_mutual_info_score
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 
 TIME_INTERVAL = "180s"
-n_clusters = 30
+n_clusters = 10
 
+
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+RESOURCES_DIR = BASE_DIR / "data" / "NOVA" / "resources" / TIME_INTERVAL
+RESULTS_DIR = RESOURCES_DIR / "results"
+HMM_DIR = RESOURCES_DIR / "HMM_sequencies"
+CLASSIFICATION_DIR = RESOURCES_DIR / "classification_data"
+
+HMM_DIR.mkdir(parents=True, exist_ok=True)
+CLASSIFICATION_DIR.mkdir(parents=True, exist_ok=True)
 
 def convert_string_float(stri):
     return np.sum([float(x) for x in stri[1:-1].replace("\n", "").rsplit()])
@@ -33,17 +44,68 @@ def mask_(x):
 
 
 # 60s/60s_results.csv
-data = pd.read_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/results/clustering_holistic_outptu_results_"+TIME_INTERVAL+"_clusters_"+str(n_clusters)+"_.csv")
-data["number_error_msgs"] = data.anom_label.apply(lambda x: convert_string_float(x))
-data["round_"] = data.round_.apply(lambda x: x[1:-1].replace("\n", "").rsplit()[-1])
-# data["round_"] =
+input_csv = RESULTS_DIR / f"clustering_holistic_outptu_results_{TIME_INTERVAL}_clusters_{n_clusters}_.csv"
+if not input_csv.exists():
+    raise FileNotFoundError(f"Arquivo de entrada nao encontrado: {input_csv}")
+
+data = pd.read_csv(input_csv)
+
+if "anom_label" not in data.columns and "anom_sequence" in data.columns:
+    data["anom_label"] = data["anom_sequence"].astype(str)
+
+if "Content" not in data.columns and "content_joined" in data.columns:
+    data["Content"] = data["content_joined"]
+
+if "app_error1" not in data.columns and "api_error1" in data.columns:
+    data["app_error1"] = data["api_error1"]
+
+if "app_error2" not in data.columns and "api_error2" in data.columns:
+    data["app_error2"] = data["api_error2"]
+
+if "round_1_final_status" not in data.columns and "round_1" in data.columns:
+    data["round_1_final_status"] = data["round_1"]
+
+if "start_time_sequence" not in data.columns and "window_start" in data.columns:
+    data["start_time_sequence"] = data["window_start"]
+
+if "round_2_final_status" not in data.columns and "round_2" in data.columns:
+    data["round_2_final_status"] = data["round_2"]
+
+if "sequence_KPI" not in data.columns:
+    if "anomaly_count" in data.columns:
+        data["sequence_KPI"] = data["anomaly_count"]
+    elif "num_events" in data.columns:
+        data["sequence_KPI"] = data["num_events"]
+
+if "anomaly_count" in data.columns:
+    data["number_error_msgs"] = data["anomaly_count"]
+else:
+    data["number_error_msgs"] = data["anom_label"].apply(lambda x: convert_string_float(x))
+
+if "round_" in data.columns:
+    def _normalize_round(value):
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                inner = stripped[1:-1].replace("\n", " ")
+                cleaned = inner.replace("'", "").replace("\"", "").replace(",", " ")
+                tokens = [tok for tok in cleaned.split() if tok]
+                if tokens:
+                    return tokens[-1]
+            return stripped
+        return str(value)
+    data["round_"] = data["round_"].apply(_normalize_round)
+elif "round" in data.columns:
+    data["round_"] = data["round"].astype(str)
+else:
+    raise KeyError("Round information not found in the input data.")
 
 
 
 
 
-data_round_1 = data[data.round_=="1"]
-data_round_2 = data[data.round_ == "2"]
+data_round_1 = data[data["round_"] == "1"].copy()
+data_round_2 = data[data["round_"] == "2"].copy()
 
 def sequential_dataset(data_round_1, round_):
     tests_1 = {}
@@ -54,6 +116,7 @@ def sequential_dataset(data_round_1, round_):
         # print(z.encoded_labels)
         test_id_time_seq = z.groupby(["start_time_sequence"]).groups
         for time_int in test_id_time_seq.keys():
+            time_key = str(time_int)
             if round_==1:
                 tmp = z.loc[test_id_time_seq[time_int]].loc[:, ["sequence_KPI",
                                                                 "pred_kmeans",
@@ -72,7 +135,7 @@ def sequential_dataset(data_round_1, round_):
                     for p in q.rsplit():
                         seqs = seqs + p + " "
 
-                tests_1[str(test_id) + "_test_id_" + time_int] = (tmp.pred_kmeans.values,
+                tests_1[str(test_id) + "_test_id_" + time_key] = (tmp.pred_kmeans.values,
                                                                   tmp.sequence_KPI.values.sum(),
                                                                   " ".join([x for x in tmp.clog_sequence_parent_service.values]),
                                                                   " ".join([x for x in tmp.app_error1.values[0].replace("['","").replace("']", "").rsplit()]),
@@ -93,7 +156,7 @@ def sequential_dataset(data_round_1, round_):
                     for p in q.rsplit():
                         seqs = seqs + p + " "
 
-                tests_1[str(test_id) + "_test_id_" + time_int] = (tmp.pred_kmeans.values,
+                tests_1[str(test_id) + "_test_id_" + time_key] = (tmp.pred_kmeans.values,
                                                                   tmp.sequence_KPI.values.sum(),
                                                                   " ".join([x for x in
                                                                             tmp.clog_sequence_parent_service.values[
@@ -171,16 +234,16 @@ cluster_seq_round2['round'] = np.full((cluster_seq_round2.shape[0]), fill_value=
 
 
 cluster_seq = pd.concat([cluster_seq_round1, cluster_seq_round2], axis=0)
-cluster_seq.to_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/HMM_sequencies/sequential_data"+TIME_INTERVAL+"_clusters_"+str(n_clusters)+"_.csv")
-cluster_seq_round1.to_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/HMM_sequencies/sequential_data_round1_"+TIME_INTERVAL+"_clusters_"+str(n_clusters)+"_.csv")
-cluster_seq_round2.to_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/HMM_sequencies/sequential_data_round2_"+TIME_INTERVAL+"_clusters_"+str(n_clusters)+"_.csv")
+cluster_seq.to_csv(HMM_DIR / f"sequential_data{TIME_INTERVAL}_clusters_{n_clusters}_.csv")
+cluster_seq_round1.to_csv(HMM_DIR / f"sequential_data_round1_{TIME_INTERVAL}_clusters_{n_clusters}_.csv")
+cluster_seq_round2.to_csv(HMM_DIR / f"sequential_data_round2_{TIME_INTERVAL}_clusters_{n_clusters}_.csv")
 
-CLog_data.to_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/classification_data/classification_CLog_"+TIME_INTERVAL+"_clusters_"+str(n_clusters)+"_.csv")
-tf_idf_data.to_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/classification_data/classification_TFIDF_"+TIME_INTERVAL+"_.csv")
+CLog_data.to_csv(CLASSIFICATION_DIR / f"classification_CLog_{TIME_INTERVAL}_clusters_{n_clusters}_.csv")
+tf_idf_data.to_csv(CLASSIFICATION_DIR / f"classification_TFIDF_{TIME_INTERVAL}_.csv")
 #
 #
 data_round_s = pd.concat([data_round_1, data_round_2], axis=0)
-data_round_s.to_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/HMM_sequencies/novel_seq_"+TIME_INTERVAL+"_clusters_" + str(n_clusters) + "_individual_time_window_.csv")
+data_round_s.to_csv(HMM_DIR / f"novel_seq_{TIME_INTERVAL}_clusters_{n_clusters}_individual_time_window_.csv")
 
 
 dataset = []
@@ -203,7 +266,7 @@ to_save.columns = vectorizer.get_feature_names()
 to_save["sequences"] = one_dataset_.sequences
 to_save["target"] = cluster_seq.final_status.values
 to_save["ID"] = one_dataset_.ID
-to_save.to_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/classification_data/classification_TFIDF_"+TIME_INTERVAL+"_clusters_"+str(n_clusters)+"_.csv", index=False)
+to_save.to_csv(CLASSIFICATION_DIR / f"classification_TFIDF_{TIME_INTERVAL}_clusters_{n_clusters}_.csv", index=False)
 
 #
 # X = vectorizer.fit_transform(cluster_seq.sequence.apply(lambda x: " ".join(str(j) for j in x))).toarray()
@@ -212,4 +275,5 @@ to_save.to_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/classification_dat
 # to_save["sequences"] = one_dataset_.sequences
 # to_save["target"] = cluster_seq.final_status.values
 # to_save["ID"] = one_dataset_.ID
-# to_save.to_csv("...../data/NOVA/resources/"+ TIME_INTERVAL +"/classification_data/classification_TFIDF_"+TIME_INTERVAL+"_OTHER_DATA_.csv", index=False)
+# to_save.to_csv(CLASSIFICATION_DIR / f"classification_TFIDF_{TIME_INTERVAL}_OTHER_DATA_.csv", index=False)
+

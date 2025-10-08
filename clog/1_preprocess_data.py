@@ -4,7 +4,7 @@ from datetime import datetime
 import pickle
 from pathlib import Path
 
-TIME_INTERVAL_ = "300s"
+TIME_INTERVAL_ = "180s"
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_PATH = BASE_DIR / "data" / "NOVA" / "NOVA_clusters_processed_padded.csv"
