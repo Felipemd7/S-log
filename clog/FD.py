@@ -1,7 +1,12 @@
 import pandas as pd
-from pomegranate import HiddenMarkovModel, DiscreteDistribution
 import numpy as np
-from pomegranate import *
+
+try:
+    from pomegranate import HiddenMarkovModel, DiscreteDistribution
+except ImportError:
+    from pomegranate.hmm import HiddenMarkovModel
+    from pomegranate.distributions import DiscreteDistribution
+import pomegranate as pgm
 import seaborn as sns
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -22,7 +27,7 @@ CLUSTERING_RESULTS_DIR = RESULTS_ROOT / "clustering_results"
 CLUSTERING_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 FAULT_DATA_PATH = BASE_DIR / "data" / "RCA_logs" / "Fault-Injection-Dataset-master" / "nova.tsv"
 TARGET_INTERVALS = [TIME_INTERVAL]
-CLUSTER_OPTIONS = [30]
+CLUSTER_OPTIONS = [10]
 
 
 def normalize_final_status(val: object) -> str:
